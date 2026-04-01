@@ -5,8 +5,8 @@ import datetime
 import re
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-FORUM_CHANNEL_ID = あなたのフォーラムID
-LIST_DISPLAY_CHANNEL_ID = あなたの表示チャンネルID
+FORUM_CHANNEL_ID = 1486702737008885781
+LIST_DISPLAY_CHANNEL_ID = 1467530008518983968
 
 intents = discord.Intents.default()
 intents.guilds = True
