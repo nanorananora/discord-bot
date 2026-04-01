@@ -162,7 +162,7 @@ async def create_forum_list_embed():
     return embed
 
 # =========================
-# 投稿
+# 投稿（1メッセージ更新版）
 # =========================
 async def update_list():
     channel = bot.get_channel(LIST_DISPLAY_CHANNEL_ID)
@@ -174,7 +174,26 @@ async def update_list():
     if not embed:
         return
 
-    await channel.send(embed=embed)
+    target_message = None
+
+    # 🔍 過去メッセージから探す（最新20件）
+    async for message in channel.history(limit=30):
+        if (
+            message.author == bot.user
+            and message.embeds
+            and message.embeds[0].title == "🎣 募集中一覧"
+        ):
+            target_message = message
+            break
+
+    if target_message:
+        # ✏️ 編集
+        await target_message.edit(embed=embed)
+        print("メッセージ更新")
+    else:
+        # 🆕 新規作成
+        await channel.send(embed=embed)
+        print("新規メッセージ作成")
 
 # =========================
 # 起動
