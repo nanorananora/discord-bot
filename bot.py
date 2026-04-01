@@ -72,30 +72,38 @@ async def create_forum_list_embed():
     recruits = []
 
     for thread in threads:
-        try:
-            if is_closed(thread):
-                continue
-
-            category = get_category_from_tags(thread)
-            if not category:
-                continue
-
-        starter_message = await thread.fetch_message(thread.id)
-        owner_name = starter_message.author.display_name
-
-            dt, display_time = parse_datetime(thread.name)
-
-            recruits.append({
-                "owner": owner_name,
-                "datetime": dt,
-                "display_time": display_time,
-                "category": category,
-                "url": thread.jump_url
-            })
-
-        except Exception as e:
-            print(e)
+    try:
+        # 終了スキップ
+        if is_closed(thread):
             continue
+
+        # カテゴリ取得
+        category = get_category_from_tags(thread)
+        if not category:
+            continue
+
+        # 🔥 投稿者取得（安全版）
+        try:
+            starter_message = await thread.fetch_message(thread.id)
+            owner_name = starter_message.author.display_name
+        except Exception as e:
+            print(f"投稿者取得エラー: {e}")
+            owner_name = "不明"
+
+        # 日時解析
+        dt, display_time = parse_datetime(thread.name)
+
+        recruits.append({
+            "owner": owner_name,
+            "datetime": dt,
+            "display_time": display_time,
+            "category": category,
+            "url": thread.jump_url
+        })
+
+    except Exception as e:
+        print(f"スレッド処理エラー: {e}")
+        continue
 
     recruits.sort(key=lambda x: (x["datetime"] is None, x["datetime"]))
 
