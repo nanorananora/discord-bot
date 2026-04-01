@@ -80,10 +80,13 @@ async def create_forum_list_embed():
             if not category:
                 continue
 
+        starter_message = await thread.fetch_message(thread.id)
+        owner_name = starter_message.author.display_name
+
             dt, display_time = parse_datetime(thread.name)
 
             recruits.append({
-                "owner": thread.owner.display_name if thread.owner else "不明",
+                "owner": owner_name,
                 "datetime": dt,
                 "display_time": display_time,
                 "category": category,
