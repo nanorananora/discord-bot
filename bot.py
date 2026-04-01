@@ -4,9 +4,6 @@ from discord.ext import commands
 import datetime
 import re
 
-# =========================
-# 設定
-# =========================
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 FORUM_CHANNEL_ID = 1486702737008885781
@@ -35,30 +32,33 @@ def is_closed(thread):
     return False
 
 # =========================
-# 日時解析
+# 日時解析（終了時間対応）
 # =========================
 def parse_datetime(title):
     jst = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(jst)
 
     date_match = re.search(r'(\d{1,2})/(\d{1,2})', title)
-    time_match = re.search(r'(\d{1,2}):(\d{2})', title)
+    time_match = re.search(r'(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})', title)
 
     if not date_match or not time_match:
         return None, "未定"
 
-    month = int(date_match.group(1))
-    day = int(date_match.group(2))
-    hour = int(time_match.group(1))
-    minute = int(time_match.group(2))
+    month, day = int(date_match.group(1)), int(date_match.group(2))
+    sh, sm = int(time_match.group(1)), int(time_match.group(2))
+    eh, em = int(time_match.group(3)), int(time_match.group(4))
 
     try:
-        dt = now.replace(month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
+        dt = now.replace(month=month, day=day, hour=sh, minute=sm, second=0, microsecond=0)
 
         if dt < now:
             dt = dt.replace(year=dt.year + 1)
 
-        display = f"{month}/{day} {hour:02d}:{minute:02d}"
+        # 曜日
+        week = ["月", "火", "水", "木", "金", "土", "日"]
+        wd = week[dt.weekday()]
+
+        display = f"{month}/{day}({wd}){sh:02d}:{sm:02d}-{eh:02d}:{em:02d}"
         return dt, display
 
     except Exception as e:
@@ -66,7 +66,7 @@ def parse_datetime(title):
         return None, "未定"
 
 # =========================
-# 一覧作成
+# 一覧作成（カテゴリ分け）
 # =========================
 async def create_forum_list_embed():
     forum = bot.get_channel(FORUM_CHANNEL_ID)
@@ -75,72 +75,94 @@ async def create_forum_list_embed():
         return None
 
     threads = list(forum.threads)
+    threads += [t async for t in forum.archived_threads(limit=50)]
 
-    try:
-        archived = [t async for t in forum.archived_threads(limit=50)]
-        threads += archived
-    except Exception as e:
-        print(f"アーカイブ取得エラー: {e}")
-
-    recruits = []
+    kasago = []
+    chigofugu = []
 
     for thread in threads:
         try:
-            # 終了スキップ
             if is_closed(thread):
                 continue
 
-            # カテゴリ取得
             category = get_category_from_tags(thread)
             if not category:
                 continue
 
-            # 投稿者取得（安全版）
             try:
                 starter_message = await thread.fetch_message(thread.id)
                 owner_name = starter_message.author.display_name
-            except Exception as e:
-                print(f"投稿者取得エラー: {e}")
+            except:
                 owner_name = "不明"
 
-            # 日時解析
             dt, display_time = parse_datetime(thread.name)
 
-            recruits.append({
+            data = {
                 "owner": owner_name,
                 "datetime": dt,
                 "display_time": display_time,
-                "category": category,
                 "url": thread.jump_url
-            })
+            }
+
+            if category == "カサゴ":
+                kasago.append(data)
+            elif category == "チゴフグ":
+                chigofugu.append(data)
 
         except Exception as e:
-            print(f"スレッド処理エラー: {e}")
+            print(e)
             continue
 
     # ソート
-    recruits.sort(key=lambda x: (x["datetime"] is None, x["datetime"]))
+    kasago.sort(key=lambda x: (x["datetime"] is None, x["datetime"]))
+    chigofugu.sort(key=lambda x: (x["datetime"] is None, x["datetime"]))
 
     embed = discord.Embed(title="🎣 募集中一覧", color=0x2f3136)
 
-    for r in recruits:
-        embed.add_field(
-            name=f"■ {r['category']}",
-            value=(
-                f"👤 募集者: {r['owner']}\n"
-                f"⌚ 日時: {r['display_time']}\n"
-                f"🔗 [参加する]({r['url']})"
-            ),
-            inline=False
-        )
+    # -------------------------
+    # カサゴ
+    # -------------------------
+    if kasago:
+        text = ""
+        for r in kasago:
+            text += (
+                f"👤 {r['owner']}\n"
+                f"⌚ {r['display_time']}\n"
+                f"🔗 {r['url']}\n\n"
+            )
+    else:
+        text = "現在募集中なし"
 
-    if not recruits:
-        embed.description = "現在募集中の投稿はありません"
+    embed.add_field(
+        name="🐟 カサゴ 募集一覧",
+        value=text,
+        inline=False
+    )
+
+    # -------------------------
+    # チゴフグ
+    # -------------------------
+    if chigofugu:
+        text = ""
+        for r in chigofugu:
+            text += (
+                f"👤 {r['owner']}\n"
+                f"⌚ {r['display_time']}\n"
+                f"🔗 {r['url']}\n\n"
+            )
+    else:
+        text = "現在募集中なし"
+
+    embed.add_field(
+        name="🐡 チゴフグ 募集一覧",
+        value=text,
+        inline=False
+    )
 
     return embed
 
 # =========================
-# 投稿処理
+# 投稿
 # =========================
 async def update_list():
     channel = bot.get_channel(LIST_DISPLAY_CHANNEL_ID)
@@ -149,30 +171,23 @@ async def update_list():
         return
 
     embed = await create_forum_list_embed()
-
     if not embed:
-        print("Embed作成失敗")
         return
 
     await channel.send(embed=embed)
 
 # =========================
-# 起動時処理（重要）
+# 起動
 # =========================
 @bot.event
 async def on_ready():
-    print(f"ログイン成功: {bot.user}")
+    print("起動完了")
 
     try:
-        print("更新開始")
         await update_list()
-        print("更新完了")
     except Exception as e:
-        print(f"エラー: {e}")
+        print(e)
 
     await bot.close()
 
-# =========================
-# 実行
-# =========================
 bot.run(TOKEN)
